@@ -4,12 +4,21 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 import requests
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(title="Telegram Task Manager")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8919019039:AAGbi8OPdhdcWyqCMjoTLECUKZlYtZOhEqc")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -60,7 +69,7 @@ def send_tg_message(chat_id: int, text: str, reply_markup: Optional[dict] = None
     except Exception as e:
         logger.error(f"TG send error: {e}")
 
-async def process_telegram_update(update: dict):
+async def handle_telegram_payload(update: dict):
     if "callback_query" in update:
         cq = update["callback_query"]
         chat_id = cq["message"]["chat"]["id"]
@@ -166,22 +175,27 @@ async def process_telegram_update(update: dict):
 
     return {"ok": True}
 
-# УНИВЕРСАЛЬНЫЙ CATCH-ALL ОБРАБОТЧИК: перехватывает ЛЮБОЙ входящий путь
+# УНИВЕРСАЛЬНЫЕ МАРШРУТЫ ДЛЯ VERCEL
+@app.api_route("/health", methods=["GET", "POST"])
+@app.api_route("/api/health", methods=["GET", "POST"])
+@app.api_route("/webhook", methods=["GET", "POST"])
+@app.api_route("/api/webhook", methods=["GET", "POST"])
+@app.api_route("/index.py", methods=["GET", "POST"])
+@app.api_route("/api/index.py", methods=["GET", "POST"])
+@app.api_route("/", methods=["GET", "POST"])
 @app.api_route("/{path:path}", methods=["GET", "POST"])
-async def catch_all_routes(request: Request, path: str):
-    logger.info(f"Incoming: {request.method} {request.url.path} (matched path: {path})")
+async def universal_handler(request: Request, path: str = ""):
     if request.method == "POST":
         try:
             update = await request.json()
-            return await process_telegram_update(update)
+            return await handle_telegram_payload(update)
         except Exception as e:
-            logger.error(f"Error parsing POST update: {e}")
+            logger.error(f"Payload error: {e}")
             return {"ok": False, "error": str(e)}
     
-    # Для любого GET-запроса (проверка здоровья)
     return {
         "status": "ok",
         "service": "Telegram Webhook Active",
-        "path_received": request.url.path,
+        "url_path": request.url.path,
         "time": datetime.now().isoformat()
     }
