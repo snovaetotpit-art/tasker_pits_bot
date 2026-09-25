@@ -60,12 +60,16 @@ def send_tg_message(chat_id: int, text: str, reply_markup: Optional[dict] = None
     except Exception as e:
         logger.error(f"TG send error: {e}")
 
+@app.get("/health")
 @app.get("/api/health")
+@app.get("/webhook")
 @app.get("/api/webhook")
 def health():
     return {"status": "ok", "service": "Telegram Webhook Active", "time": datetime.now().isoformat()}
 
+@app.post("/webhook")
 @app.post("/api/webhook")
+@app.post("/")
 async def telegram_webhook(request: Request):
     try:
         update = await request.json()
