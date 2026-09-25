@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+requests
+google-genai
+openpyxl
+reportlab
+supabase
