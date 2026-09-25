@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Task Manager Mini App</title>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            mikhaylov: '#8B5CF6',
+            bigshop: '#F59E0B',
+            keyb: '#10B981',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: var(--tg-theme-bg-color, #0f172a);
+      color: var(--tg-theme-text-color, #f8fafc);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .card-bg {
+      background-color: var(--tg-theme-secondary-bg-color, #1e293b);
+    }
+  </style>
+</head>
+<body class="p-4 min-h-screen">
+  <div class="max-w-md mx-auto space-y-4">
+    
+    <!-- Верхняя плашка: Пользователь и сводка -->
+    <div class="flex items-center justify-between pb-2 border-b border-slate-700/50">
+      <div>
+        <h1 class="text-lg font-bold flex items-center gap-2">
+          <span>⚡ Задачи и Пайплайн</span>
+        </h1>
+        <p class="text-xs text-slate-400" id="user-greeting">Личный таск-менеджер</p>
+      </div>
+      <button onclick="triggerExportModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold shadow transition">
+        📊 Отчет
+      </button>
+    </div>
+
+    <!-- Быстрая статистика -->
+    <div class="grid grid-cols-3 gap-2 text-center">
+      <div class="card-bg p-2.5 rounded-xl border border-slate-700/40">
+        <p class="text-xs text-slate-400">В работе</p>
+        <p class="text-lg font-bold text-amber-400" id="stat-progress">0</p>
+      </div>
+      <div class="card-bg p-2.5 rounded-xl border border-slate-700/40">
+        <p class="text-xs text-slate-400">Дедлайн горит</p>
+        <p class="text-lg font-bold text-rose-500" id="stat-urgent">0</p>
+      </div>
+      <div class="card-bg p-2.5 rounded-xl border border-slate-700/40">
+        <p class="text-xs text-slate-400">Сделано</p>
+        <p class="text-lg font-bold text-emerald-400" id="stat-done">0</p>
+      </div>
+    </div>
+
+    <!-- Табы фильтрации по проектам -->
+    <div class="flex space-x-1.5 overflow-x-auto py-1 text-xs no-scrollbar">
+      <button onclick="filterProject('all')" class="tab-btn px-3 py-1.5 rounded-lg font-medium whitespace-nowrap bg-indigo-600 text-white" data-slug="all">
+        Все проекты
+      </button>
+      <button onclick="filterProject('mikhaylov')" class="tab-btn px-3 py-1.5 rounded-lg font-medium whitespace-nowrap bg-slate-800 text-slate-300 hover:bg-slate-700" data-slug="mikhaylov">
+        🟣 ПЦ Михалёва
+      </button>
+      <button onclick="filterProject('big_shop')" class="tab-btn px-3 py-1.5 rounded-lg font-medium whitespace-nowrap bg-slate-800 text-slate-300 hover:bg-slate-700" data-slug="big_shop">
+        🟡 Big Shop
+      </button>
+      <button onclick="filterProject('keyb')" class="tab-btn px-3 py-1.5 rounded-lg font-medium whitespace-nowrap bg-slate-800 text-slate-300 hover:bg-slate-700" data-slug="keyb">
+        🟢 KeyB
+      </button>
+    </div>
+
+    <!-- Список задач -->
+    <div id="tasks-container" class="space-y-3 pt-1">
+      <!-- Задачи рендерятся через JS -->
+    </div>
+  </div>
+
+  <!-- Модальное окно экспорта отчета -->
+  <div id="export-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 hidden z-50">
+    <div class="card-bg p-5 rounded-2xl max-w-xs w-full space-y-4 border border-slate-700">
+      <h3 class="font-bold text-base">Экспорт отчета</h3>
+      <p class="text-xs text-slate-400">Выберите проект и формат файла для отправки в Telegram:</p>
+      
+      <div class="space-y-2">
+        <label class="text-xs text-slate-300">Проект:</label>
+        <select id="export-project" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white">
+          <option value="all">Все проекты</option>
+          <option value="mikhaylov">ПЦ Михалёва</option>
+          <option value="big_shop">Big Shop</option>
+          <option value="keyb">KeyB</option>
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button onclick="downloadReport('excel')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-semibold">
+          Excel (.xlsx)
+        </button>
+        <button onclick="downloadReport('pdf')" class="w-full py-2 bg-rose-600 hover:bg-rose-500 rounded-lg text-xs font-semibold">
+          PDF (.pdf)
+        </button>
+      </div>
+      <button onclick="closeExportModal()" class="w-full py-1.5 text-xs text-slate-400 hover:text-white">Отмена</button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      if (tg.initDataUnsafe?.user?.first_name) {
+        document.getElementById('user-greeting').innerText = tg.initDataUnsafe.user.first_name + ' • Задачи';
+      }
+    }
+
+    // Демо-данные для первоначального теста
+    let tasksData = [
+      {
+        id: "1",
+        title: "Подготовить расчет юнит-экономики и КП по UGC",
+        project_slug: "mikhaylov",
+        client_name: "Бренд Косметики",
+        requester: "@alyona",
+        priority: "urgent",
+        status: "in_progress",
+        deadline: "Завтра, 18:00",
+        subtasks: [
+          { text: "Запросить бриф и объемы", done: true },
+          { text: "Посчитать себестоимость креаторов", done: true },
+          { text: "Собрать презентацию в Google Slides", done: false }
+        ]
+      },
+      {
+        id: "2",
+        title: "Проверить веб-витрину и шлюз оплаты",
+        project_slug: "big_shop",
+        client_name: null,
+        requester: "@vadim",
+        priority: "high",
+        status: "todo",
+        deadline: "30 сен, 12:00",
+        subtasks: [
+          { text: "Тестовая транзакция без комиссии", done: false },
+          { text: "Синхронизация остатков с WB", done: false }
+        ]
+      },
+      {
+        id: "3",
+        title: "Обновить фильтры поиска квартир по локациям",
+        project_slug: "keyb",
+        client_name: null,
+        requester: "@milyokhin",
+        priority: "medium",
+        status: "done",
+        deadline: "24 сен",
+        subtasks: [
+          { text: "Добавить фильтр по метро", done: true },
+          { text: "Выкатить на staging", done: true }
+        ]
+      }
+    ];
+
+    let currentFilter = 'all';
+
+    function renderTasks() {
+      const container = document.getElementById('tasks-container');
+      container.innerHTML = '';
+
+      const filtered = currentFilter === 'all' 
+        ? tasksData 
+        : tasksData.filter(t => t.project_slug === currentFilter);
+
+      // Считаем метрики
+      document.getElementById('stat-progress').innerText = tasksData.filter(t => t.status === 'in_progress').length;
+      document.getElementById('stat-urgent').innerText = tasksData.filter(t => t.priority === 'urgent' && t.status !== 'done').length;
+      document.getElementById('stat-done').innerText = tasksData.filter(t => t.status === 'done').length;
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="text-center py-8 text-slate-500 text-xs">Нет активных задач в этом проекте</div>`;
+        return;
+      }
+
+      filtered.forEach(t => {
+        const badgeColors = {
+          mikhaylov: 'bg-purple-900/60 text-purple-300 border-purple-700/50',
+          big_shop: 'bg-amber-900/60 text-amber-300 border-amber-700/50',
+          keyb: 'bg-emerald-900/60 text-emerald-300 border-emerald-700/50',
+          other: 'bg-slate-800 text-slate-300 border-slate-700'
+        };
+        const projName = {
+          mikhaylov: 'ПЦ Михалёва',
+          big_shop: 'Big Shop',
+          keyb: 'KeyB',
+          other: 'Общее'
+        }[t.project_slug] || 'Проект';
+
+        const prioBadge = {
+          urgent: 'bg-rose-950 text-rose-300 border-rose-800',
+          high: 'bg-amber-950 text-amber-300 border-amber-800',
+          medium: 'bg-slate-800 text-slate-300 border-slate-700',
+          low: 'bg-slate-900 text-slate-400 border-slate-800'
+        }[t.priority] || '';
+
+        const card = document.createElement('div');
+        card.className = "card-bg p-3.5 rounded-2xl border border-slate-800 space-y-2.5 transition";
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold border ${badgeColors[t.project_slug]}">
+              ${projName} ${t.client_name ? '• ' + t.client_name : ''}
+            </span>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-medium border ${prioBadge}">
+              ${t.priority.toUpperCase()}
+            </span>
+          </div>
+
+          <h3 class="text-sm font-semibold leading-tight ${t.status === 'done' ? 'line-through text-slate-500' : ''}">${t.title}</h3>
+
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+            <span>👤 ${t.requester}</span>
+            <span class="${t.priority === 'urgent' && t.status !== 'done' ? 'text-rose-400 font-bold' : ''}">⏰ ${t.deadline}</span>
+          </div>
+
+          <!-- Пайплайн шагов -->
+          <div class="bg-slate-900/60 rounded-xl p-2.5 space-y-1.5 border border-slate-800/80">
+            <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Пайплайн задачи:</p>
+            ${t.subtasks.map((st, i) => `
+              <div class="flex items-center space-x-2 text-xs">
+                <input type="checkbox" ${st.done ? 'checked' : ''} onchange="toggleSubtask('${t.id}', ${i})" class="rounded text-indigo-600 focus:ring-0 bg-slate-800 border-slate-700">
+                <span class="${st.done ? 'line-through text-slate-500' : 'text-slate-200'}">${st.text}</span>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Смена статуса -->
+          <div class="flex justify-end space-x-2 pt-1">
+            ${t.status !== 'done' ? `
+              <button onclick="changeStatus('${t.id}', 'done')" class="px-2.5 py-1 bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600/50 rounded-lg text-[11px] font-medium border border-emerald-500/40">
+                ✓ Завершить
+              </button>
+            ` : `
+              <button onclick="changeStatus('${t.id}', 'in_progress')" class="px-2.5 py-1 bg-slate-800 text-slate-400 hover:bg-slate-700 rounded-lg text-[11px]">
+                ↩ Вернуть
+              </button>
+            `}
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function filterProject(slug) {
+      currentFilter = slug;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.dataset.slug === slug) {
+          btn.className = "tab-btn px-3 py-1.5 rounded-lg font-medium whitespace-nowrap bg-indigo-600 text-white";
+        } else {
+          btn.className = "tab-btn px-3 py-1.5 rounded-lg font-medium whitespace-nowrap bg-slate-800 text-slate-300 hover:bg-slate-700";
+        }
+      });
+      renderTasks();
+    }
+
+    function toggleSubtask(taskId, subtaskIdx) {
+      const task = tasksData.find(t => t.id === taskId);
+      if (task && task.subtasks[subtaskIdx]) {
+        task.subtasks[subtaskIdx].done = !task.subtasks[subtaskIdx].done;
+        renderTasks();
+      }
+    }
+
+    function changeStatus(taskId, newStatus) {
+      const task = tasksData.find(t => t.id === taskId);
+      if (task) {
+        task.status = newStatus;
+        renderTasks();
+      }
+    }
+
+    function triggerExportModal() {
+      document.getElementById('export-modal').classList.remove('hidden');
+    }
+
+    function closeExportModal() {
+      document.getElementById('export-modal').classList.add('hidden');
+    }
+
+    function downloadReport(format) {
+      const project = document.getElementById('export-project').value;
+      closeExportModal();
+      if (tg) {
+        tg.sendData(JSON.stringify({ action: "export_report", format: format, project: project }));
+        tg.close();
+      } else {
+        alert(`Запрос на генерацию отчета (${format.toUpperCase()}) для проекта ${project} отправлен боту!`);
+      }
+    }
+
+    renderTasks();
+  </script>
+</body>
+</html>
